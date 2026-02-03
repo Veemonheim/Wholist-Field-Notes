@@ -1,19 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Interface;
-using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
-using Dalamud.Utility;
-using Sirensong.Game.Helpers;
 using Sirensong.UserInterface;
 using Wholist.Common;
-using Wholist.DataStructures;
-using Wholist.Resources.Localization;
+using Wholist.Configuration;
+using Wholist.FieldNotes;
 
 namespace Wholist.UserInterface.Windows.NearbyPlayers
 {
@@ -22,26 +19,21 @@ namespace Wholist.UserInterface.Windows.NearbyPlayers
         /// <inheritdoc cref="NearbyPlayersLogic" />
         private readonly NearbyPlayersLogic logic = new();
 
-        /// <summary>
-        ///     Creates a new instance of the <see cref="NearbyPlayersWindow" />.
-        /// </summary>
-        internal NearbyPlayersWindow() : base(Strings.Windows_Who_Title)
+        private bool includeExportedHistory;
+        private bool historyMarkedOnly;
+        private bool showExportPreview = true;
+
+        internal NearbyPlayersWindow() : base(Constants.PluginName)
         {
-            this.Size = new Vector2(450, 400);
+            this.Size = new Vector2(900, 600);
             this.SizeCondition = ImGuiCond.FirstUseEver;
             this.TitleBarButtons =
             [
                 new()
                 {
                     Icon = FontAwesomeIcon.Cog,
-                    ShowTooltip = () => SiGui.AddTooltip(Strings.UserInterface_Settings_NearbyPlayers_SettingsTip),
+                    ShowTooltip = () => SiGui.AddTooltip("Settings"),
                     Click = (btn) => Services.WindowManager.ToggleConfigWindow()
-                },
-                new()
-                {
-                    Icon = FontAwesomeIcon.Heart,
-                    ShowTooltip = () => SiGui.AddTooltip(Strings.UserInterface_Settings_NearbyPlayers_DonateTip),
-                    Click = (btn) => Util.OpenLink(Constants.KoFiLink)
                 }
             ];
         }
@@ -50,199 +42,415 @@ namespace Wholist.UserInterface.Windows.NearbyPlayers
 
         public override bool DrawConditions()
         {
-            if (Services.Configuration.NearbyPlayers.HideInCombat && Services.Condition[ConditionFlag.InCombat])
+            if (Services.Configuration.NearbyPlayers.HideInCombat && Services.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat])
             {
                 return false;
             }
 
-            if (Services.Configuration.NearbyPlayers.HideInInstance && (ConditionHelper.IsBoundByDuty() || ConditionHelper.IsInIslandSanctuary()))
+            if (Services.Configuration.NearbyPlayers.HideInInstance && (Sirensong.Game.Helpers.ConditionHelper.IsBoundByDuty() || Sirensong.Game.Helpers.ConditionHelper.IsInIslandSanctuary()))
             {
                 return false;
             }
 
-            if (NearbyPlayersLogic.IsPvP)
-            {
-                return false;
-            }
-
-            return true;
+            return !NearbyPlayersLogic.IsPvP;
         }
 
-        /// <summary>
-        ///     Draws the window.
-        /// </summary>
         public override void Draw()
         {
-            var playersToDraw = this.logic.GetNearbyPlayers();
-            var childSize = Services.Configuration.NearbyPlayers.ShowSearchBar ? new Vector2(0, -55) : new Vector2(0, -25);
-
-            using (var nearbyChild = ImRaii.Child("##NearbyChild", childSize))
+            using var tabBar = ImRaii.TabBar("##FieldNotesTabs");
+            if (!tabBar)
             {
-                if (nearbyChild)
-                {
-                    this.DrawNearbyPlayersTable(playersToDraw);
-                }
+                return;
             }
 
-            // Draw the search box & total players text if not in minimal mode
-            if (Services.Configuration.NearbyPlayers.ShowSearchBar)
+            if (ImGui.BeginTabItem("Session Scan"))
             {
-                DrawSearchBar(ref this.logic.SearchText);
+                this.DrawSessionTab();
+                ImGui.EndTabItem();
             }
 
-            DrawTotalPlayers(playersToDraw.Count);
-        }
-
-        /// <summary>
-        ///     Draws the nearby players table.
-        /// </summary>
-        /// <param name="playersToDraw"></param>
-        private void DrawNearbyPlayersTable(List<PlayerInfoSlim> playersToDraw)
-        {
-            using var nearbyTable = ImRaii.Table("##NearbyTable", 6, ImGuiTableFlags.ScrollY | ImGuiTableFlags.Borders | ImGuiTableFlags.Hideable | ImGuiTableFlags.Reorderable | ImGuiTableFlags.Resizable);
-            if (nearbyTable)
+            if (ImGui.BeginTabItem("Marked / History"))
             {
-                ImGui.TableSetupColumn(Strings.UserInterface_NearbyPlayers_Players_Name, ImGuiTableColumnFlags.WidthStretch | ImGuiTableColumnFlags.NoHide, 220);
-                ImGui.TableSetupColumn(Strings.UserInterface_NearbyPlayers_Players_Job, ImGuiTableColumnFlags.WidthStretch, 150);
-                ImGui.TableSetupColumn(Strings.UserInterface_NearbyPlayers_Players_Level, ImGuiTableColumnFlags.WidthStretch, 80);
-                ImGui.TableSetupColumn(Strings.UserInterface_NearbyPlayers_Players_Homeworld, ImGuiTableColumnFlags.WidthStretch, 150);
-                ImGui.TableSetupColumn(Strings.UserInterface_NearbyPlayers_Players_Company, ImGuiTableColumnFlags.WidthStretch, 120);
-                ImGui.TableSetupColumn(Strings.UserInterface_NearbyPlayers_Players_Distance, ImGuiTableColumnFlags.WidthStretch | ImGuiTableColumnFlags.DefaultHide, 80);
-                ImGui.TableSetupScrollFreeze(0, 1);
-                ImGui.TableHeadersRow();
-                ImGuiClip.ClippedDraw(playersToDraw, this.DrawPlayer, ImGui.GetTextLineHeightWithSpacing());
+                this.DrawHistoryTab();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("Template / Export"))
+            {
+                this.DrawExportTab();
+                ImGui.EndTabItem();
             }
         }
 
-        /// <summary>
-        ///     Draws the search bar.
-        /// </summary>
-        /// <param name="searchText"></param>
-        private static void DrawSearchBar(ref string searchText)
+        private void DrawSessionTab()
         {
-            ImGui.SetNextItemWidth(-23 * ImGuiHelpers.GlobalScale);
-            ImGui.InputTextWithHint("##NearbySearch", Strings.UserInterface_NearbyPlayers_Search, ref searchText, 100);
-            ImGuiComponents.HelpMarker(@"By default search checks only player name. Use advanced filters for more specific searches.
+            DrawScanControls();
 
-Filters:
-- ""name:"" (contains)
-- ""level:"" (exact)
-- ""job:"" job name (contains) or abbreviation (exact)
-- ""homeworld:"" (contains)
-- ""company:"" (exact)
+            ImGui.Separator();
+            DrawSearchBar("##SessionSearch", "Search name or world...", ref this.logic.SearchText);
 
-Filters are additive, meaning each one will add results that match. This may change in the future.
-
-Any number of filters can be used in one search (e.g. ""name:meteor level:50 job:warrior"").");
-
-        }
-
-        /// <summary>
-        ///     Draws a player in the table.
-        /// </summary>
-        /// <param name="obj"></param>
-        private void DrawPlayer(PlayerInfoSlim obj)
-        {
-            ImGui.TableNextColumn();
-
-            // Name.
-            SiGui.TextColoured(obj.NameColour, obj.Name);
-            this.DrawPlayerContextMenu(obj);
-            ImGui.TableNextColumn();
-
-            // Job.
-            SiGui.TextColoured(NearbyPlayersLogic.GetJobColour(obj.Job), NearbyPlayersLogic.GetJobName(obj.Job));
-            ImGui.TableNextColumn();
-
-            // Level.
-            SiGui.Text(obj.Level.ToString());
-            ImGui.TableNextColumn();
-
-            // HomeWorld.
-            SiGui.Text(obj.HomeWorld);
-            ImGui.TableNextColumn();
-
-            // Company.
-            SiGui.Text(obj.CompanyTag);
-            ImGui.TableNextColumn();
-
-            // Distance.
-            SiGui.Text($"{obj.Distance} yalms");
-        }
-
-        private static void DrawTotalPlayers(int totalPlayers) => ImGuiHelpers.CenteredText(string.Format(Strings.UserInterface_NearbyPlayers_Players_Total, totalPlayers.ToString()));
-
-        /// <summary>
-        ///     Draws the context menu for a player.
-        /// </summary>
-        /// <param name="obj"></param>
-        private void DrawPlayerContextMenu(PlayerInfoSlim obj)
-        {
-            using var popupCtx = ImRaii.ContextPopupItem($"{obj.Name}{obj.HomeWorld}##WholistPopContext");
-            if (popupCtx)
+            var entries = this.logic.GetSessionEntries();
+            var tableSize = new Vector2(0, -ImGui.GetTextLineHeightWithSpacing() * 2);
+            using (var table = ImRaii.Table("##SessionTable", 9, ImGuiTableFlags.ScrollY | ImGuiTableFlags.Borders | ImGuiTableFlags.Resizable, tableSize))
             {
-                // Heading.
-                SiGui.Heading(string.Format(Strings.UserInterface_NearbyPlayers_Players_Submenu_Heading, $"{obj.Name}@{obj.HomeWorld}"));
-
-                // Examine.
-                if (ImGui.Selectable(Strings.UserInterface_NearbyPlayers_Players_Submenu_Examine))
+                if (table)
                 {
-                    obj.OpenExamine();
-                }
+                    ImGui.TableSetupColumn("Include", ImGuiTableColumnFlags.WidthFixed, 60);
+                    ImGui.TableSetupColumn("Marked", ImGuiTableColumnFlags.WidthFixed, 60);
+                    ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch, 180);
+                    ImGui.TableSetupColumn("Home World", ImGuiTableColumnFlags.WidthStretch, 140);
+                    ImGui.TableSetupColumn("First Seen (UTC)", ImGuiTableColumnFlags.WidthStretch, 140);
+                    ImGui.TableSetupColumn("Last Seen (UTC)", ImGuiTableColumnFlags.WidthStretch, 140);
+                    ImGui.TableSetupColumn("Seen Count", ImGuiTableColumnFlags.WidthFixed, 80);
+                    ImGui.TableSetupColumn("Visible", ImGuiTableColumnFlags.WidthFixed, 60);
+                    ImGui.TableSetupColumn("Lodestone", ImGuiTableColumnFlags.WidthFixed, 80);
+                    ImGui.TableSetupScrollFreeze(0, 1);
+                    ImGui.TableHeadersRow();
 
-                // View Character Card.
-                if (ImGui.Selectable(Strings.UserInterface_NearbyPlayers_Players_AdventurePlate))
-                {
-                    obj.OpenCharaCard();
-                }
-
-                // Target.
-                if (ImGui.Selectable(Strings.UserInterface_NearbyPlayers_Players_Submenu_Target))
-                {
-                    obj.Target();
-                }
-
-                // Focus target.
-                if (ImGui.Selectable(Strings.UserInterface_NearbyPlayers_Players_Submenu_FocusTarget))
-                {
-                    obj.FocusTarget();
-                }
-
-                // Set tell target
-                if (ImGui.Selectable(Strings.UserInterface_NearbyPlayers_Players_Submenu_Tell))
-                {
-                    NearbyPlayersLogic.SetChatTellTarget(obj.Name, obj.HomeWorld);
-                }
-
-                // Invite to party
-                using (ImRaii.Disabled(obj.IsInParty))
-                {
-                    if (ImGui.Selectable(Strings.UserInterface_NearbyPlayers_Players_Submenu_InviteToParty))
+                    foreach (var (key, entry) in entries.OrderBy(entry => entry.Value.Name, StringComparer.OrdinalIgnoreCase))
                     {
-                        this.logic.InviteToParty(obj.Name, obj.HomeWorld);
+                        DrawSessionRow(key, entry);
                     }
                 }
+            }
 
-                // Add to blacklist.
-                using (ImRaii.Disabled(obj.IsFriend))
+            ImGuiHelpers.CenteredText($"Session entries: {entries.Count}");
+        }
+
+        private void DrawHistoryTab()
+        {
+            ImGui.Text("Persistent history (local only).");
+            ImGui.Spacing();
+
+            using (var row = ImRaii.Group())
+            {
+                DrawSearchBar("##HistorySearch", "Search name or world...", ref this.logic.HistorySearchText);
+                ImGui.SameLine();
+                ImGui.Checkbox("Show exported", ref this.includeExportedHistory);
+                ImGui.SameLine();
+                ImGui.Checkbox("Marked only", ref this.historyMarkedOnly);
+            }
+
+            ImGui.Separator();
+
+            DrawHistoryControls();
+
+            ImGui.Separator();
+
+            var entries = this.logic.GetHistoryEntries(this.includeExportedHistory, this.historyMarkedOnly);
+            var tableSize = new Vector2(0, -ImGui.GetTextLineHeightWithSpacing() * 2);
+            using (var table = ImRaii.Table("##HistoryTable", 10, ImGuiTableFlags.ScrollY | ImGuiTableFlags.Borders | ImGuiTableFlags.Resizable, tableSize))
+            {
+                if (table)
                 {
-                    if (ImGui.Selectable(Strings.UserInterface_NearbyPlayers_Players_Submenu_AddToBlacklist))
+                    ImGui.TableSetupColumn("Include", ImGuiTableColumnFlags.WidthFixed, 60);
+                    ImGui.TableSetupColumn("Marked", ImGuiTableColumnFlags.WidthFixed, 60);
+                    ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch, 160);
+                    ImGui.TableSetupColumn("Home World", ImGuiTableColumnFlags.WidthStretch, 140);
+                    ImGui.TableSetupColumn("First Seen (UTC)", ImGuiTableColumnFlags.WidthStretch, 140);
+                    ImGui.TableSetupColumn("Last Seen (UTC)", ImGuiTableColumnFlags.WidthStretch, 140);
+                    ImGui.TableSetupColumn("Times Seen", ImGuiTableColumnFlags.WidthFixed, 80);
+                    ImGui.TableSetupColumn("Exported", ImGuiTableColumnFlags.WidthFixed, 70);
+                    ImGui.TableSetupColumn("Last Export (UTC)", ImGuiTableColumnFlags.WidthStretch, 140);
+                    ImGui.TableSetupColumn("Lodestone", ImGuiTableColumnFlags.WidthFixed, 80);
+                    ImGui.TableSetupScrollFreeze(0, 1);
+                    ImGui.TableHeadersRow();
+
+                    foreach (var (key, entry) in entries)
                     {
-                        this.logic.PromptUserBlacklist(obj.Name, obj.HomeWorld);
+                        DrawHistoryRow(key, entry);
                     }
                 }
+            }
 
-                // Find on Map.
-                if (ImGui.Selectable(Strings.UserInterface_NearbyPlayers_Players_Submenu_OpenOnMap))
+            ImGuiHelpers.CenteredText($"History entries: {entries.Count}");
+        }
+
+        private void DrawExportTab()
+        {
+            var config = Services.Configuration.FieldNotes;
+
+            ImGui.Text("Template tokens:");
+            ImGui.BulletText("{{names}} — selected names, one per line");
+            ImGui.BulletText("{{timestamp_utc}} — export timestamp (UTC)");
+            ImGui.BulletText("{{world}} — your current world (if available)");
+            ImGui.BulletText("{{location}} — current location (if available)");
+            ImGui.Spacing();
+
+            var template = config.ExportTemplate;
+            var templateSize = new Vector2(-1, 200 * ImGuiHelpers.GlobalScale);
+            if (ImGui.InputTextMultiline("##ExportTemplate", ref template, 4000, templateSize))
+            {
+                config.ExportTemplate = template;
+                Services.Configuration.Save();
+            }
+
+            ImGui.Spacing();
+            var exportConfigChanged = ImGui.Checkbox("Include exported entries by default", ref config.IncludeExportedByDefault);
+            ImGui.SameLine();
+            exportConfigChanged |= ImGui.Checkbox("Include world in names list", ref config.IncludeWorldInNames);
+            ImGui.SameLine();
+            exportConfigChanged |= ImGui.Checkbox("Mark exported after copy", ref config.MarkExportedAfterCopy);
+
+            if (exportConfigChanged)
+            {
+                Services.Configuration.Save();
+                this.logic.Manager.InitializeDefaultSelection();
+            }
+
+            ImGui.Spacing();
+
+            var exportEntries = GetExportEntries(out var exportKeys);
+            using (ImRaii.Disabled(exportEntries.Count == 0))
+            {
+                if (ImGui.Button("Copy names only"))
                 {
-                    NearbyPlayersLogic.FlagAndOpen(obj.Position, obj.Name);
+                    var text = this.logic.BuildNamesList(exportEntries, false);
+                    ImGui.SetClipboardText(text);
+                    HandleExportedFlag(exportKeys);
                 }
 
-                // Find on Lodestone.
-                if (ImGui.Selectable(Strings.UserInterface_NearbyPlayers_Players_Submenu_Lodestone))
+                ImGui.SameLine();
+                if (ImGui.Button("Copy names + world"))
                 {
-                    NearbyPlayersLogic.SearchPlayerOnLodestone(obj.Name, obj.HomeWorld);
+                    var text = this.logic.BuildNamesList(exportEntries, true);
+                    ImGui.SetClipboardText(text);
+                    HandleExportedFlag(exportKeys);
                 }
+
+                ImGui.SameLine();
+                if (ImGui.Button("Copy report snippet"))
+                {
+                    var text = this.logic.BuildTemplateExport(exportEntries, config.ExportTemplate, config.IncludeWorldInNames);
+                    ImGui.SetClipboardText(text);
+                    HandleExportedFlag(exportKeys);
+                }
+            }
+
+            ImGui.SameLine();
+            ImGui.Checkbox("Show preview", ref this.showExportPreview);
+
+            if (this.showExportPreview)
+            {
+                ImGui.Separator();
+                var preview = this.logic.BuildTemplateExport(exportEntries, config.ExportTemplate, config.IncludeWorldInNames);
+                ImGui.InputTextMultiline("##ExportPreview", ref preview, 4000, new Vector2(-1, 200 * ImGuiHelpers.GlobalScale), ImGuiInputTextFlags.ReadOnly);
+            }
+        }
+
+        private void DrawScanControls()
+        {
+            var state = this.logic.Manager.State;
+            var isPvP = NearbyPlayersLogic.IsPvP;
+            var isLoggedIn = Services.ClientState.IsLoggedIn;
+
+            ImGui.Text($"Scan status: {state}");
+            ImGui.TextDisabled("Only characters currently loaded by your client can be captured.");
+
+            using (ImRaii.Disabled(!isLoggedIn || isPvP))
+            {
+                if (ImGui.Button("Start Scan"))
+                {
+                    this.logic.Manager.StartScan();
+                }
+            }
+
+            ImGui.SameLine();
+            using (ImRaii.Disabled(state != FieldNotesManager.ScanState.Running))
+            {
+                if (ImGui.Button("Pause"))
+                {
+                    this.logic.Manager.PauseScan();
+                }
+            }
+
+            ImGui.SameLine();
+            using (ImRaii.Disabled(state != FieldNotesManager.ScanState.Paused))
+            {
+                if (ImGui.Button("Resume"))
+                {
+                    this.logic.Manager.ResumeScan();
+                }
+            }
+
+            ImGui.SameLine();
+            using (ImRaii.Disabled(state == FieldNotesManager.ScanState.Stopped))
+            {
+                if (ImGui.Button("Stop"))
+                {
+                    this.logic.Manager.StopScan();
+                }
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button("Clear Session"))
+            {
+                this.logic.Manager.ClearSession();
+            }
+
+            if (isPvP)
+            {
+                ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "Scanning is disabled in PvP.");
+            }
+        }
+
+        private void DrawHistoryControls()
+        {
+            var config = Services.Configuration.FieldNotes;
+            var pruneDays = config.AutoPruneDays;
+            ImGui.SetNextItemWidth(120);
+            if (ImGui.InputInt("Auto-prune days", ref pruneDays))
+            {
+                config.AutoPruneDays = Math.Max(1, pruneDays);
+                pruneDays = config.AutoPruneDays;
+                Services.Configuration.Save();
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button("Prune now"))
+            {
+                this.logic.Manager.PruneHistory();
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button("Reset history"))
+            {
+                ImGui.OpenPopup("##ResetHistoryConfirm");
+            }
+
+            if (ImGui.BeginPopup("##ResetHistoryConfirm"))
+            {
+                ImGui.Text("Clear all stored history?");
+                if (ImGui.Button("Confirm"))
+                {
+                    this.logic.Manager.ResetHistory();
+                    ImGui.CloseCurrentPopup();
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Cancel"))
+                {
+                    ImGui.CloseCurrentPopup();
+                }
+                ImGui.EndPopup();
+            }
+        }
+
+        private void DrawSessionRow(string key, SessionEntry entry)
+        {
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            var selected = this.logic.Manager.IsSelected(key);
+            if (ImGui.Checkbox($"##select-session-{key}", ref selected))
+            {
+                this.logic.Manager.ToggleSelection(key, selected);
+            }
+
+            ImGui.TableNextColumn();
+            var persistentEntry = Services.Configuration.FieldNotes.History.GetValueOrDefault(key);
+            var marked = persistentEntry?.Marked ?? false;
+            if (ImGui.Checkbox($"##marked-session-{key}", ref marked) && persistentEntry != null)
+            {
+                this.logic.Manager.ToggleMarked(persistentEntry, marked);
+            }
+
+            ImGui.TableNextColumn();
+            ImGui.Text(entry.Name);
+            ImGui.TableNextColumn();
+            ImGui.Text(entry.HomeWorldName);
+            ImGui.TableNextColumn();
+            ImGui.Text(entry.FirstSeenUtc.ToString("u"));
+            ImGui.TableNextColumn();
+            ImGui.Text(entry.LastSeenUtc.ToString("u"));
+            ImGui.TableNextColumn();
+            ImGui.Text(entry.SeenCount.ToString());
+            ImGui.TableNextColumn();
+            ImGui.Text(entry.IsVisible ? "Yes" : "No");
+            ImGui.TableNextColumn();
+            if (ImGui.SmallButton($"Search##session-{key}"))
+            {
+                NearbyPlayersLogic.SearchPlayerOnLodestone(entry.Name, entry.HomeWorldName);
+            }
+        }
+
+        private void DrawHistoryRow(string key, PluginConfiguration.PersistentPlayerEntry entry)
+        {
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            var selected = this.logic.Manager.IsSelected(key);
+            if (ImGui.Checkbox($"##select-history-{key}", ref selected))
+            {
+                this.logic.Manager.ToggleSelection(key, selected);
+            }
+
+            ImGui.TableNextColumn();
+            var marked = entry.Marked;
+            if (ImGui.Checkbox($"##marked-history-{key}", ref marked))
+            {
+                this.logic.Manager.ToggleMarked(entry, marked);
+            }
+
+            ImGui.TableNextColumn();
+            ImGui.Text(entry.Name);
+            ImGui.TableNextColumn();
+            ImGui.Text(entry.HomeWorldName);
+            ImGui.TableNextColumn();
+            ImGui.Text(entry.FirstSeenUtc.ToString("u"));
+            ImGui.TableNextColumn();
+            ImGui.Text(entry.LastSeenUtc.ToString("u"));
+            ImGui.TableNextColumn();
+            ImGui.Text(entry.TimesSeen.ToString());
+            ImGui.TableNextColumn();
+            var exported = entry.Exported;
+            if (ImGui.Checkbox($"##exported-history-{key}", ref exported))
+            {
+                entry.Exported = exported;
+                entry.LastExportedUtc = exported ? entry.LastExportedUtc ?? DateTime.UtcNow : null;
+                if (exported && !Services.Configuration.FieldNotes.IncludeExportedByDefault)
+                {
+                    this.logic.Manager.ToggleSelection(key, false);
+                }
+                Services.Configuration.Save();
+            }
+
+            ImGui.TableNextColumn();
+            ImGui.Text(entry.LastExportedUtc?.ToString("u") ?? "-");
+            ImGui.TableNextColumn();
+            if (ImGui.SmallButton($"Search##history-{key}"))
+            {
+                NearbyPlayersLogic.SearchPlayerOnLodestone(entry.Name, entry.HomeWorldName);
+            }
+        }
+
+        private static void DrawSearchBar(string id, string hint, ref string searchText)
+        {
+            ImGui.SetNextItemWidth(-1);
+            ImGui.InputTextWithHint(id, hint, ref searchText, 200);
+        }
+
+        private List<PluginConfiguration.PersistentPlayerEntry> GetExportEntries(out List<string> exportKeys)
+        {
+            IReadOnlyCollection<PluginConfiguration.PersistentPlayerEntry> entries;
+            if (this.logic.Manager.HasSelection)
+            {
+                entries = this.logic.Manager.GetSelectedExportEntries().ToList();
+            }
+            else
+            {
+                entries = this.logic.Manager.GetDefaultExportEntries().ToList();
+            }
+
+            exportKeys = entries
+                .Select(entry => FieldNotesManager.BuildKey(entry.Name, entry.HomeWorldId))
+                .ToList();
+
+            return entries.ToList();
+        }
+
+        private void HandleExportedFlag(List<string> exportKeys)
+        {
+            if (Services.Configuration.FieldNotes.MarkExportedAfterCopy && exportKeys.Count > 0)
+            {
+                this.logic.Manager.MarkExported(exportKeys);
             }
         }
     }

@@ -14,8 +14,7 @@ namespace Wholist.CommandHandling
         /// </summary>
         private IDalamudCommand[] commands = [
             new WhoCommand(),
-            new WhoSettingsCommand(),
-            new RandomPlateCommand()
+            new WhoSettingsCommand()
         ];
 
         /// <summary>

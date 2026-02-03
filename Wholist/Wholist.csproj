@@ -4,7 +4,7 @@
   <PropertyGroup>
     <AssemblyName>Wholist</AssemblyName>
     <Version>1.11.2.1</Version>
-    <PackageProjectUrl>https://github.com/Blooym/Dalamud.Wholist</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/Veemonheim/Wholist-Field-Notes</PackageProjectUrl>
   </PropertyGroup>
 
   <!-- Build Configuration -->

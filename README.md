@@ -47,7 +47,7 @@ You can mark entries you care about. Marked entries store:
 - Optional “exported already” flag (to reduce duplicate reporting)
 
 ### Exports
-- Copy **names only**
+- Copy **names only** 
 - Copy **names + world**
 - Copy a full **report template block** with placeholders replaced
 
