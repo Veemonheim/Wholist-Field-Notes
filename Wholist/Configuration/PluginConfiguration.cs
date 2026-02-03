@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Configuration;
 using Wholist.Common;
@@ -25,6 +26,11 @@ namespace Wholist.Configuration
         ///     The configuration for the "Nearby Players" window.
         /// </summary>
         public NearbyPlayersConfiguration NearbyPlayers = new();
+
+        /// <summary>
+        ///     The configuration for Field Notes data and exports.
+        /// </summary>
+        public FieldNotesConfiguration FieldNotes = new();
 
         /// <summary>
         ///     Saves the current configuration to disk.
@@ -189,6 +195,63 @@ namespace Wholist.Configuration
                 // Misc
                 public Vector4 Other = otherColourDefault;
             }
+        }
+
+        /// <summary>
+        ///     The configuration for Field Notes data and exports.
+        /// </summary>
+        [Serializable]
+        internal sealed class FieldNotesConfiguration
+        {
+            /// <summary>
+            ///     The persistent history entries keyed by name + home world ID.
+            /// </summary>
+            public Dictionary<string, PersistentPlayerEntry> History = new(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>
+            ///     The number of days before an entry is pruned.
+            /// </summary>
+            public int AutoPruneDays = 180;
+
+            /// <summary>
+            ///     The template used for report exports.
+            /// </summary>
+            public string ExportTemplate = "UTC Timestamp: {{timestamp_utc}}\n\n{{names}}";
+
+            /// <summary>
+            ///     Whether to mark entries as exported after copying.
+            /// </summary>
+            public bool MarkExportedAfterCopy = true;
+
+            /// <summary>
+            ///     Whether to include exported entries in default selections.
+            /// </summary>
+            public bool IncludeExportedByDefault;
+
+            /// <summary>
+            ///     Whether to include world in name exports.
+            /// </summary>
+            public bool IncludeWorldInNames = true;
+        }
+
+        /// <summary>
+        ///     A persistent entry stored in configuration.
+        /// </summary>
+        [Serializable]
+        internal sealed class PersistentPlayerEntry
+        {
+            public string Name = string.Empty;
+            public uint HomeWorldId;
+            public string HomeWorldName = string.Empty;
+            public string? LastSeenWorldName;
+            public DateTime FirstSeenUtc;
+            public DateTime LastSeenUtc;
+            public int TimesSeen;
+            public bool Marked;
+            public DateTime? FirstMarkedUtc;
+            public DateTime? LastMarkedUtc;
+            public bool Exported;
+            public DateTime? LastExportedUtc;
         }
     }
 }
