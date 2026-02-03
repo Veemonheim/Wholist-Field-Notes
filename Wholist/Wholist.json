@@ -1,15 +1,17 @@
 {
-  "Author": "Blooym",
-  "Name": "Wholist",
-  "InternalName": "Wholist",
-  "Punchline": "Show nearby players in a stylish way, inspired by the \"/who\" command from World of Warcraft.",
-  "Description": "Show nearby players in a stylish way, inspired by the \"/who\" command from World of Warcraft\n\nFeatures:\n- Minimalistic interface that can be scaled down to become part of your HUD.\n- Player context menu items for examining, searching on the Lodestone and more.\n- Customizable colours & behaviour.\n- Random adventure plate command\n- Display nearby player count in the server info bar\n\nPlease note this plugin will automatically disable functionality in PvP.",
-  "RepoUrl": "https://github.com/Blooym/Dalamud.Wholist",
+  "Author": "Veemonheim (forked from Blooym)",
+  "Name": "Wholist Field Notes",
+  "InternalName": "WholistFieldNotes",
+  "Punchline": "Session-based nearby player log with optional marking and copy-to-clipboard exports.",
+  "Description": "A Wholist-derived session log for nearby players.\n\nFeatures:\n- User-initiated scan sessions that keep a \"seen this session\" list even as players load/unload.\n- Optional marking with local history (first marked, last seen, times seen) to reduce duplicate reporting.\n- Customizable clipboard export templates (names-only, names+world, full template blocks).\n- Lodestone helper: opens character search for name/world (no automatic lookups).\n- Local-only storage with configurable auto-prune (default: 180 days).\n\nGuardrails:\n- No automated reporting or ticket submission.\n- No in-game interaction automation (no tells/emotes/follow).\n- Scanning runs only when explicitly started by the user.\n\nNote: This plugin is limited to players currently loaded by your client at the time they are seen.",
+  "RepoUrl": "https://github.com/Veemonheim/Wholist-Field-Notes",
   "CategoryTags": [
     "UI",
-    "Social"
+    "Utilities"
   ],
   "Tags": [
-    "Player list"
+    "Player list",
+    "Logging",
+    "Export"
   ]
 }
