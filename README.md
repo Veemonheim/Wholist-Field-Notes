@@ -95,4 +95,4 @@ PRs and issue reports are welcome, especially for:
 - Performance improvements in crowded areas
 
 If you’re giving feedback as a tester:
-- Please include your Dalamud API level, game region (NA/EU/JP), and a short description of where you tested (e.g., “busy city plaza”).
+- Please include your Dalamud API level, game region (NA/EU/JP), and a short description of where you tested (e.g., “Lower Lominsa City Aetheryte”).
