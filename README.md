@@ -18,7 +18,7 @@ This plugin **does not** submit tickets, contact anyone in-game, or perform auto
 
 ---
 
-## Guardrails (intentional limitations)
+## Guardrails
 
 This fork bakes in guardrails to reduce misuse:
 - **User-initiated scanning only** (no silent background scanning on login)
@@ -31,7 +31,7 @@ This fork bakes in guardrails to reduce misuse:
 
 ## Features
 
-### Session scan (the big change vs upstream)
+### Session scan
 - Press **Start Scan** to begin a session.
 - While scanning, the plugin **remembers everyone seen in that session**, even if they later unload or move out of range.
 - Each entry tracks:
@@ -39,7 +39,7 @@ This fork bakes in guardrails to reduce misuse:
   - Last seen (this session)
   - Visible now / not currently loaded (optional UI indicator)
 
-### Marked history (persistent, local)
+### Marked history
 You can mark entries you care about. Marked entries store:
 - **First marked** timestamp
 - **Last seen** timestamp
@@ -47,7 +47,7 @@ You can mark entries you care about. Marked entries store:
 - Optional “exported already” flag (to reduce duplicate reporting)
 
 ### Exports
-- Copy **names only** (one per line)
+- Copy **names only**
 - Copy **names + world**
 - Copy a full **report template block** with placeholders replaced
 
