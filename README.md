@@ -2,7 +2,7 @@
 
 A fork of Wholist that focuses on *session-based* nearby-player logging, optional marking, and copy-to-clipboard exports for **manual** reporting / note-taking workflows.
 
-> **Status:** Work in progress. This repository began as a fork of Wholist and is being reshaped into “Field Notes” (session cache + marking + export templates + auto-prune). Features mentioned below should be treated as WIP.
+> **Status:** Work in progress, out of date. Not intended for stalking - Instead used to mass-report bots with similar names. This repository began as a fork of Wholist and is being reshaped into “Field Notes” (session cache + marking + export templates + auto-prune). Features mentioned below should be treated as WIP.
 
 ---
 
